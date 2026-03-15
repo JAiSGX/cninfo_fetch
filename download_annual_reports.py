@@ -183,8 +183,9 @@ def download_reports(codes: list, years: list, report_type: str, access_token: s
                 continue
 
             for report in reports:
+                title_no_spaces = report['title'].replace(" ", "")
                 filename = sanitize_filename(
-                    f"{report['seccode']}_{report['secname']}_{report['title']}.pdf"
+                    f"{report['seccode']}_{title_no_spaces}.pdf"
                 )
                 save_path = os.path.join(output_dir, filename)
 
