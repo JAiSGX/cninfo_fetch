@@ -2,12 +2,16 @@
 下载上市公司年报/半年报 PDF 文档。
 
 用法示例:
+    # 命令行模式（支持多年份）
     python download_annual_reports.py \
         --codes 000001 600519 \
-        --year 2024 \
+        --years 2022 2023 2024 \
         --type annual \
         --token YOUR_ACCESS_TOKEN \
         --output ./reports
+
+    # 无参数直接运行，执行 test_download() 测试示例
+    python download_annual_reports.py
 """
 
 import argparse
@@ -134,69 +138,121 @@ def sanitize_filename(name: str) -> str:
     return re.sub(r'[<>:"/\\|?*]', '_', name).strip()
 
 
+def download_reports(codes: list, years: list, report_type: str, access_token: str, output_dir: str = "./reports"):
+    """
+    批量下载年报/半年报。
+
+    Args:
+        codes: 股票代码列表, 如 ["000001", "600519"]
+        years: 年份列表, 如 [2022, 2023, 2024]
+        report_type: "annual"(年报) 或 "semi_annual"(半年报)
+        access_token: cninfo API access_token
+        output_dir: PDF 保存目录
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    start_suffix, end_suffix = DATE_RANGES[report_type]
+    type_label = "年报" if report_type == "annual" else "半年报"
+
+    print(f"报告类型: {type_label}")
+    print(f"股票代码: {', '.join(codes)}")
+    print(f"年份列表: {', '.join(str(y) for y in years)}")
+    print(f"保存目录: {output_dir}")
+    print("=" * 60)
+
+    total_downloaded = 0
+
+    for year in years:
+        # 年报在 year+1 年的 3-6 月公布；半年报在 year 年的 7-9 月公布
+        pub_year = year + 1 if report_type == "annual" else year
+        sdate = f"{pub_year}{start_suffix}"
+        edate = f"{pub_year}{end_suffix}"
+
+        print(f"\n--- {year} 年{type_label} (查询日期: {sdate}~{edate}) ---")
+
+        for code in codes:
+            print(f"\n[{code}] 正在查询公告...")
+            records = query_announcements(code, sdate, edate, access_token)
+            print(f"  共获取 {len(records)} 条公告记录")
+
+            reports = filter_reports(records, report_type, year)
+            print(f"  筛选出 {len(reports)} 份{type_label}")
+
+            if not reports:
+                print(f"  未找到 {code} 的 {year} 年{type_label}")
+                continue
+
+            for report in reports:
+                filename = sanitize_filename(
+                    f"{report['seccode']}_{report['secname']}_{report['title']}.pdf"
+                )
+                save_path = os.path.join(output_dir, filename)
+
+                if os.path.exists(save_path):
+                    print(f"  已存在，跳过: {filename}")
+                    continue
+
+                print(f"  正在下载: {report['title']}")
+                if download_pdf(report["url"], save_path):
+                    print(f"  已保存: {filename}")
+                    total_downloaded += 1
+                else:
+                    print(f"  下载失败: {filename}")
+
+                time.sleep(1)
+
+    print(f"\n{'=' * 60}")
+    print(f"下载完成，共下载 {total_downloaded} 份报告到 {output_dir}")
+    return total_downloaded
+
+
 def main():
     parser = argparse.ArgumentParser(description="下载上市公司年报/半年报 PDF")
     parser.add_argument("--codes", nargs="+", required=True, help="股票代码列表，如 000001 600519")
-    parser.add_argument("--year", type=int, required=True, help="报告年份，如 2024")
+    parser.add_argument("--years", nargs="+", type=int, required=True, help="年份列表，如 2022 2023 2024")
     parser.add_argument("--type", choices=["annual", "semi_annual"], default="annual",
                         help="报告类型: annual(年报) 或 semi_annual(半年报)")
     parser.add_argument("--token", required=True, help="cninfo API access_token")
     parser.add_argument("--output", default="./reports", help="下载保存目录")
     args = parser.parse_args()
 
-    os.makedirs(args.output, exist_ok=True)
+    download_reports(args.codes, args.years, args.type, args.token, args.output)
 
-    # 确定查询的日期范围
-    # 年报在 year+1 年的 3-6 月公布；半年报在 year 年的 7-9 月公布
-    start_suffix, end_suffix = DATE_RANGES[args.type]
-    if args.type == "annual":
-        pub_year = args.year + 1
-    else:
-        pub_year = args.year
 
-    sdate = f"{pub_year}{start_suffix}"
-    edate = f"{pub_year}{end_suffix}"
+# ============================================================
+# 测试调用示例（直接运行时使用）
+# 使用前请将 ACCESS_TOKEN 替换为你的真实 token
+# ============================================================
+def test_download():
+    """测试调用示例：下载多只股票、多个年份的年报。"""
 
-    print(f"查询参数: 类型={args.type}, 报告年份={args.year}, 查询日期范围={sdate}~{edate}")
-    print(f"股票代码: {', '.join(args.codes)}")
-    print(f"保存目录: {args.output}")
-    print("=" * 60)
+    ACCESS_TOKEN = "your_access_token_here"  # <-- 替换为你的 token
 
-    total_downloaded = 0
+    # 股票代码列表
+    stock_codes = [
+        "000001",  # 平安银行
+        "600519",  # 贵州茅台
+        "000858",  # 五粮液
+    ]
 
-    for code in args.codes:
-        print(f"\n[{code}] 正在查询公告...")
-        records = query_announcements(code, sdate, edate, args.token)
-        print(f"  共获取 {len(records)} 条公告记录")
+    # 年份列表
+    years = [2022, 2023, 2024]
 
-        reports = filter_reports(records, args.type, args.year)
-        print(f"  筛选出 {len(reports)} 份报告")
+    # 报告类型: "annual"(年报) 或 "semi_annual"(半年报)
+    report_type = "annual"
 
-        if not reports:
-            print(f"  未找到 {code} 的 {args.year} 年{'年报' if args.type == 'annual' else '半年报'}")
-            continue
+    # 保存目录
+    output_dir = "./reports"
 
-        for report in reports:
-            filename = sanitize_filename(f"{report['seccode']}_{report['secname']}_{report['title']}.pdf")
-            save_path = os.path.join(args.output, filename)
-
-            if os.path.exists(save_path):
-                print(f"  已存在，跳过: {filename}")
-                continue
-
-            print(f"  正在下载: {report['title']}")
-            if download_pdf(report["url"], save_path):
-                print(f"  已保存: {filename}")
-                total_downloaded += 1
-            else:
-                print(f"  下载失败: {filename}")
-
-            # 避免请求过于频繁
-            time.sleep(1)
-
-    print(f"\n{'=' * 60}")
-    print(f"下载完成，共下载 {total_downloaded} 份报告到 {args.output}")
+    download_reports(stock_codes, years, report_type, ACCESS_TOKEN, output_dir)
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    if len(sys.argv) > 1:
+        # 有命令行参数时走 argparse
+        main()
+    else:
+        # 无参数时运行测试示例
+        test_download()
