@@ -18,6 +18,7 @@ import argparse
 import os
 import re
 import time
+import webbrowser
 import requests
 
 
@@ -36,6 +37,13 @@ TITLE_PATTERNS = {
 }
 
 CNINFO_FILE_BASE = "https://static.cninfo.com.cn/"
+CNINFO_HOME = "https://www.cninfo.com.cn"
+
+
+def open_browser(url: str = CNINFO_HOME):
+    """在系统默认浏览器中打开指定 URL。"""
+    print(f"正在打开浏览器: {url}")
+    webbrowser.open(url)
 
 
 def query_announcements(scode: str, sdate: str, edate: str, access_token: str) -> list:
@@ -209,13 +217,22 @@ def download_reports(codes: list, years: list, report_type: str, access_token: s
 
 def main():
     parser = argparse.ArgumentParser(description="下载上市公司年报/半年报 PDF")
-    parser.add_argument("--codes", nargs="+", required=True, help="股票代码列表，如 000001 600519")
-    parser.add_argument("--years", nargs="+", type=int, required=True, help="年份列表，如 2022 2023 2024")
+    parser.add_argument("--open-browser", action="store_true",
+                        help="在默认浏览器中打开巨潮资讯网首页（可用于获取 access_token）")
+    parser.add_argument("--codes", nargs="+", help="股票代码列表，如 000001 600519")
+    parser.add_argument("--years", nargs="+", type=int, help="年份列表，如 2022 2023 2024")
     parser.add_argument("--type", choices=["annual", "semi_annual"], default="annual",
                         help="报告类型: annual(年报) 或 semi_annual(半年报)")
-    parser.add_argument("--token", required=True, help="cninfo API access_token")
+    parser.add_argument("--token", help="cninfo API access_token")
     parser.add_argument("--output", default="./reports", help="下载保存目录")
     args = parser.parse_args()
+
+    if args.open_browser:
+        open_browser()
+        return
+
+    if not args.codes or not args.years or not args.token:
+        parser.error("--codes、--years 和 --token 为必填参数（或使用 --open-browser 打开浏览器）")
 
     download_reports(args.codes, args.years, args.type, args.token, args.output)
 
